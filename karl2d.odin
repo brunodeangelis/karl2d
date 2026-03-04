@@ -1296,6 +1296,13 @@ set_texture_filter_ex :: proc(
 	rb.set_texture_filter(t.handle, scale_down_filter, scale_up_filter, mip_filter)
 }
 
+is_texture_valid :: proc(t: Texture) -> bool {
+	return \
+		t.handle != TEXTURE_NONE &&
+		t.width > 0 &&
+		t.height > 0
+}
+
 //-------//
 // AUDIO //
 //-------//
