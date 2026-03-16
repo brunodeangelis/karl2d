@@ -37,6 +37,7 @@ Render_Backend_Interface :: struct #all_or_none {
 
 	create_texture: proc(width: int, height: int, format: Pixel_Format) -> Texture_Handle,
 	load_texture: proc(data: []u8, width: int, height: int, format: Pixel_Format) -> Texture_Handle,
+	load_image_from_texture: proc(handle: Texture_Handle) -> Image,
 	update_texture: proc(handle: Texture_Handle, data: []u8, rect: Rect) -> bool,
 	destroy_texture: proc(handle: Texture_Handle),
 	texture_needs_vertical_flip: proc(handle: Texture_Handle) -> bool,

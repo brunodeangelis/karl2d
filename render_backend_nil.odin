@@ -16,6 +16,7 @@ RENDER_BACKEND_NIL :: Render_Backend_Interface {
 	set_internal_state = rbnil_set_internal_state,
 	create_texture = rbnil_create_texture,
 	load_texture = rbnil_load_texture,
+	load_image_from_texture = rbnil_load_image_from_texture,
 	update_texture = rbnil_update_texture,
 	destroy_texture = rbnil_destroy_texture,
 	texture_needs_vertical_flip = rbnil_texture_needs_vertical_flip,
@@ -78,6 +79,10 @@ rbnil_create_texture :: proc(width: int, height: int, format: Pixel_Format) -> T
 }
 
 rbnil_load_texture :: proc(data: []u8, width: int, height: int, format: Pixel_Format) -> Texture_Handle {
+	return {}
+}
+
+rbnil_load_image_from_texture :: proc(th: Texture_Handle) -> Image {
 	return {}
 }
 

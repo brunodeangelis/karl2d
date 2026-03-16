@@ -18,6 +18,7 @@ RENDER_BACKEND_D3D11 :: Render_Backend_Interface {
 	set_internal_state = d3d11_set_internal_state,
 	create_texture = d3d11_create_texture,
 	load_texture = d3d11_load_texture,
+	load_image_from_texture = d3d11_load_image_from_texture,
 	update_texture = d3d11_update_texture,
 	destroy_texture = d3d11_destroy_texture,
 	texture_needs_vertical_flip = d3d11_texture_needs_vertical_flip,
@@ -454,6 +455,7 @@ create_texture :: proc(
 		SampleDesc = {Count = 1},
 		Usage      = .DEFAULT,
 		BindFlags  = {.SHADER_RESOURCE},
+		CPUAccessFlags = {.READ},
 	}
 
 	texture: ^d3d11.ITexture2D
@@ -560,6 +562,64 @@ d3d11_destroy_render_target :: proc(render_target: Render_Target_Handle) {
 
 d3d11_load_texture :: proc(data: []u8, width: int, height: int, format: Pixel_Format) -> Texture_Handle {
 	return create_texture(width, height, format, raw_data(data))
+}
+
+d3d11_load_image_from_texture :: proc(th: Texture_Handle) -> Image {
+	tex := hm.get(&s.textures, th)
+
+	if tex == nil || tex.tex == nil {
+		log.errorf("Trying to load texture %v data, but it is invalid.", th)
+		return {}
+	}
+
+	texture := tex.tex
+    desc: d3d11.TEXTURE2D_DESC
+    texture->GetDesc(&desc)
+
+    staging_desc := d3d11.TEXTURE2D_DESC{
+        Width          = desc.Width,
+        Height         = desc.Height,
+        MipLevels      = 1,
+        ArraySize      = 1,
+        Format         = desc.Format,
+        SampleDesc     = {Count = 1, Quality = 0},
+        Usage          = .STAGING,
+        CPUAccessFlags = {.READ},
+        BindFlags      = {},
+        MiscFlags      = {},
+    }
+
+    staging: ^d3d11.ITexture2D
+    hr := s.device->CreateTexture2D(&staging_desc, nil, &staging)
+    assert(hr == 0)
+    defer staging->Release()
+
+    s.device_context->CopyResource(staging, texture)
+
+    mapped: d3d11.MAPPED_SUBRESOURCE
+    hr = s.device_context->Map(staging, 0, .READ, {}, &mapped)
+    assert(hr == 0)
+    defer s.device_context->Unmap(staging, 0)
+
+    bpp : u32 = 4 // adjust for your format
+    pixels := make([]u8, desc.Width * desc.Height * bpp, s.allocator)
+
+    src := cast([^]u8)mapped.pData
+    for row in 0..<desc.Height {
+        src_off := uint(row) * uint(mapped.RowPitch)
+        dst_off := uint(row) * uint(desc.Width) * uint(bpp)
+        mem.copy(
+            &pixels[dst_off],
+            &src[src_off],
+            int(desc.Width * bpp),
+        )
+    }
+
+    return {
+    	pixels,
+    	int(desc.Width),
+    	int(desc.Height),
+    }
 }
 
 d3d11_update_texture :: proc(th: Texture_Handle, data: []u8, rect: Rect) -> bool {

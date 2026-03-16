@@ -146,6 +146,13 @@ init :: proc(
 	return s
 }
 
+set_texture :: proc(t: Texture_Handle) {
+    if s.batch_texture != t {
+        draw_current_batch()
+    }
+    s.batch_texture = t
+}
+
 // Updates the internal state of the library. Call this early in the frame to make sure inputs and
 // frame times are up-to-date.
 //
@@ -1118,6 +1125,15 @@ measure_text_ex :: proc(font_handle: Font, text: string, font_size: f32) -> Vec2
 	return TextBounds(&s.fs, font.fontstash_handle, font_size, text)
 }
 
+get_glyph :: proc(codepoint: rune, font_handle: Font, size: f32) -> (^fs.Glyph, bool) {
+	if font_handle < 0 || int(font_handle) >= len(s.fonts) {
+		return {}, false
+	}
+	fs_font := fs.__getFont(&s.fs, s.fonts[font_handle].fontstash_handle)
+	isize := i16(size * 10)
+	return fs.__getGlyph(&s.fs, fs_font, codepoint, isize)
+}
+
 // Draw text at a position with a size. This uses the default font. `pos` will be equal to the 
 // top-left position of the text.
 draw_text :: proc(text: string, pos: Vec2, font_size: f32, color := BLACK) {
@@ -1253,6 +1269,20 @@ load_texture_from_bytes_raw :: proc(bytes: []u8, width: int, height: int, format
 		width = width,
 		height = height,
 	}
+}
+
+Image :: struct {
+	pixels: []u8,
+	width:  int,
+	height: int,
+}
+
+load_image_from_texture :: proc(texture: Texture) -> Image {
+	return rb.load_image_from_texture(texture.handle)
+}
+
+destroy_image :: proc(image: Image) {
+	delete(image.pixels, s.allocator)
 }
 
 // Get a rectangle that spans the whole texture. Coordinates will be (x, y) = (0, 0) and size

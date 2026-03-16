@@ -17,6 +17,7 @@ RENDER_BACKEND_GL :: Render_Backend_Interface {
 	set_internal_state = gl_set_internal_state,
 	create_texture = gl_create_texture,
 	load_texture = gl_load_texture,
+	load_image_from_texture = gl_load_image_from_texture,
 	update_texture = gl_update_texture,
 	destroy_texture = gl_destroy_texture,
 	texture_needs_vertical_flip = gl_texture_needs_vertical_flip,
@@ -423,6 +424,10 @@ gl_update_texture :: proc(th: Texture_Handle, data: []u8, rect: Rect) -> bool {
 	gl.BindTexture(gl.TEXTURE_2D, tex.id)
 	gl.TexSubImage2D(gl.TEXTURE_2D, 0, i32(rect.x), i32(rect.y), i32(rect.w), i32(rect.h), gl.RGBA, gl.UNSIGNED_BYTE, raw_data(data))
 	return true
+}
+
+gl_load_image_from_texture :: proc(th: Texture_Handle) -> Image {
+	return {}
 }
 
 gl_destroy_texture :: proc(th: Texture_Handle) {
