@@ -12,6 +12,7 @@ import "core:strings"
 import "core:reflect"
 import "core:time"
 import "core:encoding/endian"
+import tracy "../odin-tracy"
 
 import fs "vendor:fontstash"
 
@@ -179,9 +180,10 @@ set_texture :: proc(t: Texture_Handle) {
 ////     }
 //// }
 update :: proc() -> bool {
+	tracy.ZoneN("k2.update")
+
 	reset_frame_allocator()
 	calculate_frame_time()
-	update_audio_mixer()
 	process_events()
 	return !close_window_requested()
 }
@@ -246,6 +248,7 @@ clear :: proc(color: Color) {
 //
 // Called as part of `update`, but can be called manually if you need more control.
 reset_frame_allocator :: proc() {
+	tracy.ZoneN("k2.reset_frame_allocator")
 	free_all(s.frame_allocator)
 }
 
@@ -254,6 +257,8 @@ reset_frame_allocator :: proc() {
 //
 // Called as part of `update`, but can be called manually if you need more control.
 calculate_frame_time :: proc() {
+	tracy.ZoneN("k2.calculate_frame_time")
+
 	now := time.now()
 
 	if s.prev_frame_time != {} {
@@ -281,6 +286,7 @@ calculate_frame_time :: proc() {
 // make sure that all rendering has been sent off to the GPU (as it calls `draw_current_batch()`).
 present :: proc() {
 	draw_current_batch()
+	tracy.ZoneN("rb present")
 	rb.present()
 }
 
@@ -290,6 +296,8 @@ present :: proc() {
 //
 // Called by `update`, but can be called manually if you need more control.
 process_events :: proc() {
+	tracy.ZoneN("k2.process_events")
+
 	s.key_went_up = {}
 	s.key_went_down = {}
 	s.key_went_down_repeat = {}
@@ -491,6 +499,8 @@ set_window_mode :: proc(window_mode: Window_Mode) {
 // so the maximum number of vertices that can be drawn in each batch is
 // VERTEX_BUFFER_MAX / shader.vertex_size
 draw_current_batch :: proc() {
+	tracy.ZoneN("k2.draw_current_batch")
+
 	if s.vertex_buffer_cpu_used == 0 {
 		return
 	}

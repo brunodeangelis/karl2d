@@ -1110,7 +1110,7 @@ create_swapchain :: proc(w, h: int) {
 		BufferUsage = {.RENDER_TARGET_OUTPUT},
 		BufferCount = 2,
 		Scaling     = .STRETCH,
-		SwapEffect  = .DISCARD,
+		SwapEffect  = .FLIP_DISCARD,
 	}
 
 	dxgi_factory: ^dxgi.IFactory2

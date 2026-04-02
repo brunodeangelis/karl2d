@@ -35,6 +35,7 @@ import "core:slice"
 import "base:runtime"
 @require import "log"
 
+import tracy "../odin-tracy"
 
 windows_state_size :: proc() -> int {
 	return size_of(Windows_State)
@@ -127,65 +128,75 @@ windows_get_window_render_glue :: proc() -> Window_Render_Glue {
 }
 
 windows_get_events :: proc(events: ^[dynamic]Event) {
+	tracy.ZoneN("k2.windows_get_events")
+
 	msg: win32.MSG
 
 	// This loop will call `window_proc` which will add more things to `frame_events`.
-	for win32.PeekMessageW(&msg, nil, 0, 0, win32.PM_REMOVE) {
-		win32.TranslateMessage(&msg)
-		win32.DispatchMessageW(&msg)
+	{
+		tracy.ZoneN("win32.PeekMessageW")
+
+		for win32.PeekMessageW(&msg, nil, 0, 0, win32.PM_REMOVE) {
+			win32.TranslateMessage(&msg)
+			win32.DispatchMessageW(&msg)
+		}
 	}
 
-	// 4 is the limit set by microsoft, not by us. So I'm not using MAX_GAMEPADS here.
-	for gamepad in 0..<4 {
-		gp_event: win32.XINPUT_KEYSTROKE
+	{
+		tracy.ZoneN("win32.XInputGetKeystroke")
 
-		for win32.XInputGetKeystroke(win32.XUSER(gamepad), 0, &gp_event) == .SUCCESS {
-			button: Maybe(Gamepad_Button)
+		// 4 is the limit set by microsoft, not by us. So I'm not using MAX_GAMEPADS here.
+		for gamepad in 0..<4 {
+			gp_event: win32.XINPUT_KEYSTROKE
 
-			#partial switch gp_event.VirtualKey {
-			case .DPAD_UP:    button = .Left_Face_Up
-			case .DPAD_DOWN:  button = .Left_Face_Down
-			case .DPAD_LEFT:  button = .Left_Face_Left
-			case .DPAD_RIGHT: button = .Left_Face_Right
+			for win32.XInputGetKeystroke(win32.XUSER(gamepad), 0, &gp_event) == .SUCCESS {
+				button: Maybe(Gamepad_Button)
 
-			case .Y: button = .Right_Face_Up
-			case .A: button = .Right_Face_Down
-			case .X: button = .Right_Face_Left
-			case .B: button = .Right_Face_Right
+				#partial switch gp_event.VirtualKey {
+				case .DPAD_UP:    button = .Left_Face_Up
+				case .DPAD_DOWN:  button = .Left_Face_Down
+				case .DPAD_LEFT:  button = .Left_Face_Left
+				case .DPAD_RIGHT: button = .Left_Face_Right
 
-			case .LSHOULDER: button = .Left_Shoulder
-			case .LTRIGGER:  button = .Left_Trigger
+				case .Y: button = .Right_Face_Up
+				case .A: button = .Right_Face_Down
+				case .X: button = .Right_Face_Left
+				case .B: button = .Right_Face_Right
 
-			case .RSHOULDER: button = .Right_Shoulder
-			case .RTRIGGER:  button = .Right_Trigger
+				case .LSHOULDER: button = .Left_Shoulder
+				case .LTRIGGER:  button = .Left_Trigger
 
-			case .BACK: button = .Middle_Face_Left
-			
-			// Not sure you can get the "middle button" with XInput (the one that goe to dashboard)
+				case .RSHOULDER: button = .Right_Shoulder
+				case .RTRIGGER:  button = .Right_Trigger
 
-			case .START: button = .Middle_Face_Right
+				case .BACK: button = .Middle_Face_Left
+				
+				// Not sure you can get the "middle button" with XInput (the one that goe to dashboard)
 
-			case .LTHUMB_PRESS: button = .Left_Stick_Press
-			case .RTHUMB_PRESS: button = .Right_Stick_Press
-			}
+				case .START: button = .Middle_Face_Right
 
-			b := button.? or_continue
-			evt: Event
-
-			if .KEYDOWN in gp_event.Flags {
-				evt = Event_Gamepad_Button_Went_Down {
-					gamepad = gamepad,
-					button = b,
+				case .LTHUMB_PRESS: button = .Left_Stick_Press
+				case .RTHUMB_PRESS: button = .Right_Stick_Press
 				}
-			} else if .KEYUP in gp_event.Flags {
-				evt = Event_Gamepad_Button_Went_Up {
-					gamepad = gamepad,
-					button = b,
-				}
-			}
 
-			if evt != nil {
-				append(&s.events, evt)
+				b := button.? or_continue
+				evt: Event
+
+				if .KEYDOWN in gp_event.Flags {
+					evt = Event_Gamepad_Button_Went_Down {
+						gamepad = gamepad,
+						button = b,
+					}
+				} else if .KEYUP in gp_event.Flags {
+					evt = Event_Gamepad_Button_Went_Up {
+						gamepad = gamepad,
+						button = b,
+					}
+				}
+
+				if evt != nil {
+					append(&s.events, evt)
+				}
 			}
 		}
 	}
