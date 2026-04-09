@@ -86,15 +86,22 @@ windows_init :: proc(
 	win32.GetDpiForMonitor(win32.MonitorFromWindow(nil, .MONITOR_DEFAULTTOPRIMARY), {}, &dpix, &dpiy)
 	win32.AdjustWindowRectExForDpi(&initial_rect, windows_get_style(options.window_mode), false, {}, dpix)
 
+	width := i32(initial_rect.right - initial_rect.left)
+	height := i32(initial_rect.bottom - initial_rect.top)
+	screen_w := win32.GetSystemMetrics(win32.SM_CXSCREEN)
+	screen_h := win32.GetSystemMetrics(win32.SM_CYSCREEN)
+	pos_x := (screen_w - width) / 2
+	pos_y := (screen_h - height) / 2
+
 	// We create a window with default position and size. We set the correct size in
 	// `windows_set_window_mode`.
 	s.hwnd = win32.CreateWindowW(
 		CLASS_NAME,
 		win32.utf8_to_wstring(window_title),
 		win32.WS_VISIBLE,
-		win32.CW_USEDEFAULT, win32.CW_USEDEFAULT,
-		i32(initial_rect.right - initial_rect.left),
-		i32(initial_rect.bottom - initial_rect.top),
+		pos_x, pos_y,
+		width,
+		height,
 		nil, nil, instance, nil,
 	)
 	assert(s.hwnd != nil, "Failed creating window")
