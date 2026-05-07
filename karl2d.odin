@@ -744,6 +744,31 @@ draw_rect :: proc(r: Rect, c: Color) {
 	batch_vertex({r.x, r.y + r.h}, {0, 1}, c)
 }
 
+draw_rect_standing :: proc(r: Rect, c: Color) {
+	if s.vertex_buffer_cpu_used + s.batch_shader.vertex_size * 6 > len(s.vertex_buffer_cpu) {
+		draw_current_batch()
+	}
+
+	if s.batch_texture != s.shape_drawing_texture {
+		draw_current_batch()
+	}
+
+	s.batch_texture = s.shape_drawing_texture
+
+	bottom_y := r.y + r.h
+	tl := Vec3{r.x,       r.y - bottom_y, bottom_y}
+	tr := Vec3{r.x + r.w, r.y - bottom_y, bottom_y}
+	br := Vec3{r.x + r.w, 0,              bottom_y}
+	bl := Vec3{r.x,       0,              bottom_y}
+
+	batch_vertex_3d(tl, {0, 0}, c)
+	batch_vertex_3d(tr, {1, 0}, c)
+	batch_vertex_3d(br, {1, 1}, c)
+	batch_vertex_3d(tl, {0, 0}, c)
+	batch_vertex_3d(br, {1, 1}, c)
+	batch_vertex_3d(bl, {0, 1}, c)
+}
+
 // Creates a rectangle from a position and a size and draws it.
 draw_rect_vec :: proc(pos: Vec2, size: Vec2, c: Color) {
 	draw_rect({pos.x, pos.y, size.x, size.y}, c)
@@ -943,6 +968,14 @@ draw_texture_rect :: proc(tex: Texture, rect: Rect, pos: Vec2, tint := WHITE) {
 //
 // Rotation unit: Radians.
 draw_texture_ex :: proc(tex: Texture, src: Rect, dst: Rect, origin: Vec2, rotation: f32, tint := WHITE) {
+	draw_texture_ex_internal(tex, src, dst, origin, rotation, tint, false)
+}
+
+draw_texture_standing_ex :: proc(tex: Texture, src: Rect, dst: Rect, origin: Vec2, rotation: f32, tint := WHITE) {
+	draw_texture_ex_internal(tex, src, dst, origin, rotation, tint, true)
+}
+
+draw_texture_ex_internal :: proc(tex: Texture, src: Rect, dst: Rect, origin: Vec2, rotation: f32, tint: Color, standing: bool) {
 	if tex.width == 0 || tex.height == 0 {
 		return
 	}
@@ -1059,12 +1092,22 @@ draw_texture_ex :: proc(tex: Texture, src: Rect, dst: Rect, origin: Vec2, rotati
 		uv5.y -= us.y		
 	}
 
-	batch_vertex(tl, uv0, c)
-	batch_vertex(tr, uv1, c)
-	batch_vertex(br, uv2, c)
-	batch_vertex(tl, uv3, c)
-	batch_vertex(br, uv4, c)
-	batch_vertex(bl, uv5, c)
+	if standing {
+		bottom_y := math.max(math.max(tl.y, tr.y), math.max(bl.y, br.y))
+		batch_vertex_3d({tl.x, tl.y - bottom_y, bottom_y}, uv0, c)
+		batch_vertex_3d({tr.x, tr.y - bottom_y, bottom_y}, uv1, c)
+		batch_vertex_3d({br.x, br.y - bottom_y, bottom_y}, uv2, c)
+		batch_vertex_3d({tl.x, tl.y - bottom_y, bottom_y}, uv3, c)
+		batch_vertex_3d({br.x, br.y - bottom_y, bottom_y}, uv4, c)
+		batch_vertex_3d({bl.x, bl.y - bottom_y, bottom_y}, uv5, c)
+	} else {
+		batch_vertex(tl, uv0, c)
+		batch_vertex(tr, uv1, c)
+		batch_vertex(br, uv2, c)
+		batch_vertex(tl, uv3, c)
+		batch_vertex(br, uv4, c)
+		batch_vertex(bl, uv5, c)
+	}
 }
 
 // Tells you how much space some text of a certain size will use on the screen. The font used is the
@@ -2600,12 +2643,23 @@ set_camera :: proc(camera: Maybe(Camera)) {
 // Transform a point `pos` that lives on the screen to a point in the world. This can be useful for
 // bringing (for example) mouse positions (k2.get_mouse_position()) into world-space.
 screen_to_world :: proc(pos: Vec2, camera: Camera) -> Vec2 {
+	if camera.projection_mode == .Cavalier {
+		p := (pos - camera.offset) / camera.zoom
+		rot := linalg.matrix4_rotate_f32(-camera.rotation, {0, 1, 0})
+		world := linalg.matrix4_translate(floor_vec3_from_vec2(camera.target)) * rot * Vec4{p.x, 0, p.y, 1}
+		return {world.x, world.z}
+	}
+
 	return (camera_world_matrix(camera) * Vec4 { pos.x, pos.y, 0, 1 }).xy
 }
 
 // Transform a point `pos` that lives in the world to a point on the screen. This can be useful when
 // you need to take a position in the world and compare it to a screen-space point.
 world_to_screen :: proc(pos: Vec2, camera: Camera) -> Vec2 {
+	if camera.projection_mode == .Cavalier {
+		return (camera_view_matrix(camera) * Vec4 { pos.x, 0, pos.y, 1 }).xy
+	}
+
 	return (camera_view_matrix(camera) * Vec4 { pos.x, pos.y, 0, 1 }).xy
 }
 
@@ -2629,22 +2683,52 @@ world_to_screen :: proc(pos: Vec2, camera: Camera) -> Vec2 {
 // The view matrix is a Mat4 because its easier to upload a Mat4 to the GPU. But only the upper-left
 // 3x3 matrix is actually used.
 camera_view_matrix :: proc(c: Camera) -> Mat4 {
-	inv_target_translate := linalg.matrix4_translate(vec3_from_vec2(-c.target))
-	inv_rot := linalg.matrix4_rotate_f32(c.rotation, {0, 0, 1})
 	inv_scale := linalg.matrix4_scale(Vec3{c.zoom, c.zoom, 1})
 	inv_offset_translate := linalg.matrix4_translate(vec3_from_vec2(c.offset))
 
-	return inv_offset_translate * inv_scale * inv_rot * inv_target_translate
+	switch c.projection_mode {
+	case .Orthographic:
+		inv_target_translate := linalg.matrix4_translate(vec3_from_vec2(-c.target))
+		inv_rot := linalg.matrix4_rotate_f32(c.rotation, {0, 0, 1})
+		return inv_offset_translate * inv_scale * inv_rot * inv_target_translate
+	case .Cavalier:
+		inv_target_translate := linalg.matrix4_translate(floor_vec3_from_vec2(-c.target))
+		inv_rot := linalg.matrix4_rotate_f32(c.rotation, {0, 1, 0})
+		return inv_offset_translate * inv_scale * cavalier_shear_matrix() * inv_rot * inv_target_translate
+	}
+
+	return 1
 }
 
 // Calculate the matrix that brings something in front of the camera.
 camera_world_matrix :: proc(c: Camera) -> Mat4 {
 	offset_translate := linalg.matrix4_translate(vec3_from_vec2(-c.offset))
-	rot := linalg.matrix4_rotate_f32(-c.rotation, {0, 0, 1})
 	scale := linalg.matrix4_scale(Vec3{1/c.zoom, 1/c.zoom, 1})
-	target_translate := linalg.matrix4_translate(vec3_from_vec2(c.target))
 
-	return target_translate * rot * scale * offset_translate
+	switch c.projection_mode {
+	case .Orthographic:
+		rot := linalg.matrix4_rotate_f32(-c.rotation, {0, 0, 1})
+		target_translate := linalg.matrix4_translate(vec3_from_vec2(c.target))
+		return target_translate * rot * scale * offset_translate
+	case .Cavalier:
+		rot := linalg.matrix4_rotate_f32(-c.rotation, {0, 1, 0})
+		target_translate := linalg.matrix4_translate(floor_vec3_from_vec2(c.target))
+		return target_translate * rot * cavalier_shear_inverse_matrix() * scale * offset_translate
+	}
+
+	return 1
+}
+
+cavalier_shear_matrix :: proc() -> Mat4 {
+	shear: Mat4 = 1
+	shear[2][1] = 1
+	return shear
+}
+
+cavalier_shear_inverse_matrix :: proc() -> Mat4 {
+	shear: Mat4 = 1
+	shear[2][1] = -1
+	return shear
 }
 
 get_fullscreen_rect :: proc() -> Rect {
@@ -2816,6 +2900,11 @@ Texture_Filter :: enum {
 	Linear, // Smoothed texture scaling.
 }
 
+Camera_Projection_Mode :: enum {
+	Orthographic,
+	Cavalier,
+}
+
 Camera :: struct {
 	// Where the camera looks.
 	target: Vec2,
@@ -2827,6 +2916,10 @@ Camera :: struct {
 
 	// Rotate the camera (unit: radians)
 	rotation: f32,
+
+	// Choose how the camera maps world-space into view-space. The default is a flat 2D
+	// orthographic camera. Cavalier adds an oblique shear for geometry with non-zero z.
+	projection_mode: Camera_Projection_Mode,
 
 	// Zoom the camera. A bigger value means "more zoom".
 	//
@@ -3368,8 +3461,16 @@ Event_Window_Unfocused :: struct {}
 API_END :: true
 
 batch_vertex :: proc(v: Vec2, uv: Vec2, color: Color) {
-	v := v
+	v3 := vec3_from_vec2(v)
 
+	if c, c_ok := s.batch_camera.?; c_ok && c.projection_mode == .Cavalier {
+		v3 = floor_vec3_from_vec2(v)
+	}
+
+	batch_vertex_3d(v3, uv, color)
+}
+
+batch_vertex_3d :: proc(v: Vec3, uv: Vec2, color: Color) {
 	if s.vertex_buffer_cpu_used == len(s.vertex_buffer_cpu) {
 		draw_current_batch()
 	}
@@ -3384,7 +3485,19 @@ batch_vertex :: proc(v: Vec2, uv: Vec2, color: Color) {
 	mem.set(&s.vertex_buffer_cpu[base_offset], 0, shd.vertex_size)
 
 	if pos_offset != -1 {
-		(^Vec2)(&s.vertex_buffer_cpu[base_offset + pos_offset])^ = v
+		position_is_vec3 := false
+		for input in shd.inputs {
+			if input.name == "position" && input.type == .Vec3 {
+				position_is_vec3 = true
+				break
+			}
+		}
+
+		if position_is_vec3 {
+			(^Vec3)(&s.vertex_buffer_cpu[base_offset + pos_offset])^ = v
+		} else {
+			(^Vec2)(&s.vertex_buffer_cpu[base_offset + pos_offset])^ = v.xy
+		}
 	}
 
 	if uv_offset != -1 {
@@ -3429,7 +3542,7 @@ ab: Audio_Backend_Interface
 frame_allocator: runtime.Allocator
 
 get_shader_input_default_type :: proc(name: string, type: Shader_Input_Type) -> Shader_Default_Inputs {
-	if name == "position" && type == .Vec2 {
+	if name == "position" && (type == .Vec2 || type == .Vec3) {
 		return .Position
 	} else if name == "texcoord" && type == .Vec2 {
 		return .UV
@@ -3461,7 +3574,7 @@ get_shader_input_format :: proc(name: string, type: Shader_Input_Type) -> Pixel_
 
 	if default_type != .Unknown {
 		switch default_type {
-		case .Position: return .RG_32_Float
+		case .Position: return type == .Vec3 ? .RGB_32_Float : .RG_32_Float
 		case .UV: return .RG_32_Float
 		case .Color: return .RGBA_8_Norm
 		case .Unknown: unreachable()
@@ -3484,6 +3597,12 @@ vec3_from_vec2 :: proc(v: Vec2) -> Vec3 {
 	}
 }
 
+floor_vec3_from_vec2 :: proc(v: Vec2) -> Vec3 {
+	return {
+		v.x, 0, v.y,
+	}
+}
+
 frame_cstring :: proc(str: string, loc := #caller_location) -> cstring {
 	return strings.clone_to_cstring(str, s.frame_allocator, loc)
 }
@@ -3495,7 +3614,7 @@ matrix_ortho3d_f32 :: proc "contextless" (left, right, bottom, top, near, far: f
 
 	m[0, 0] = +2 / (right - left)
 	m[1, 1] = +2 / (top - bottom)
-	m[2, 2] = +1
+	m[2, 2] = 0
 	m[0, 3] = -(right + left)   / (right - left)
 	m[1, 3] = -(top   + bottom) / (top - bottom)
 	m[2, 3] = 0

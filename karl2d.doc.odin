@@ -265,6 +265,8 @@ set_gamepad_vibration :: proc(gamepad: Gamepad_Index, left: f32, right: f32)
 // rectangle.
 draw_rect :: proc(r: Rect, c: Color)
 
+draw_rect_standing :: proc(r: Rect, c: Color)
+
 // Creates a rectangle from a position and a size and draws it.
 draw_rect_vec :: proc(pos: Vec2, size: Vec2, c: Color)
 
@@ -310,6 +312,8 @@ draw_texture_rect :: proc(tex: Texture, rect: Rect, pos: Vec2, tint := WHITE)
 //
 // Rotation unit: Radians.
 draw_texture_ex :: proc(tex: Texture, src: Rect, dst: Rect, origin: Vec2, rotation: f32, tint := WHITE)
+
+draw_texture_standing_ex :: proc(tex: Texture, src: Rect, dst: Rect, origin: Vec2, rotation: f32, tint := WHITE)
 
 // Tells you how much space some text of a certain size will use on the screen. The font used is the
 // default font. The return value contains the width and height of the text.
@@ -772,6 +776,11 @@ Texture_Filter :: enum {
 	Linear, // Smoothed texture scaling.
 }
 
+Camera_Projection_Mode :: enum {
+	Orthographic,
+	Cavalier,
+}
+
 Camera :: struct {
 	// Where the camera looks.
 	target: Vec2,
@@ -783,6 +792,10 @@ Camera :: struct {
 
 	// Rotate the camera (unit: radians)
 	rotation: f32,
+
+	// Choose how the camera maps world-space into view-space. The default is a flat 2D
+	// orthographic camera. Cavalier adds an oblique shear for geometry with non-zero z.
+	projection_mode: Camera_Projection_Mode,
 
 	// Zoom the camera. A bigger value means "more zoom".
 	//
