@@ -20,6 +20,8 @@ PLATFORM_WINDOWS :: Platform_Interface {
 	get_window_scale = windows_get_window_scale,
 	set_window_mode = windows_set_window_mode,
 	set_window_icon = windows_set_window_icon,
+	show_window = windows_show_window,
+	get_clipboard_text = windows_get_clipboard_text,
 
 	set_cursor_hidden = windows_set_cursor_hidden,
 	is_cursor_hidden = windows_is_cursor_hidden,
@@ -67,6 +69,7 @@ windows_init :: proc(
 	s.events = make([dynamic]Event, allocator = allocator)
 	s.custom_context = context
 	hm.dynamic_init(&s.custom_cursors, allocator)
+	s.window_visible = !options.start_hidden
 
 	win32.SetProcessDpiAwarenessContext(win32.DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
 	win32.SetProcessDPIAware()
@@ -104,14 +107,15 @@ windows_init :: proc(
 		i32(s.screen_height),
 	}
 
-	win32.AdjustWindowRectExForDpi(&initial_rect, windows_get_style(options.window_mode), false, {}, dpix)
+	window_style := windows_get_style(options.window_mode, s.window_visible)
+	win32.AdjustWindowRectExForDpi(&initial_rect, window_style, false, {}, dpix)
 
 	// We create a window with default position and size. We set the correct size in
 	// `windows_set_window_mode`.
 	s.hwnd = win32.CreateWindowW(
 		CLASS_NAME,
 		win32.utf8_to_wstring(window_title, frame_allocator),
-		win32.WS_VISIBLE,
+		window_style,
 		win32.CW_USEDEFAULT, win32.CW_USEDEFAULT,
 		i32(initial_rect.right - initial_rect.left),
 		i32(initial_rect.bottom - initial_rect.top),
@@ -123,6 +127,7 @@ windows_init :: proc(
 	windows_set_window_mode(options.window_mode)
 	
 	win32.XInputEnable(true)
+	win32.DragAcceptFiles(s.hwnd, true)
 
 	when RENDER_BACKEND_NAME == "d3d11" {
 		s.window_render_glue = {
@@ -328,7 +333,7 @@ windows_get_window_position :: proc() -> Vec2 {
 	return {f32(r.left), f32(r.top)}
 }
 
-windows_get_style :: proc(window_mode: Window_Mode) -> win32.DWORD {
+windows_get_style :: proc(window_mode: Window_Mode, visible := true) -> win32.DWORD {
 	style: win32.DWORD
 
 	switch window_mode {
@@ -336,20 +341,22 @@ windows_get_style :: proc(window_mode: Window_Mode) -> win32.DWORD {
 		style = win32.WS_OVERLAPPED |
 	            win32.WS_CAPTION |
 	            win32.WS_SYSMENU |
-	            win32.WS_MINIMIZEBOX |
-	            win32.WS_VISIBLE
+	            win32.WS_MINIMIZEBOX
 
 	case .Windowed_Resizable:
 		style = win32.WS_OVERLAPPED |
 	            win32.WS_CAPTION |
 	            win32.WS_SYSMENU |
 	            win32.WS_MINIMIZEBOX |
-	            win32.WS_VISIBLE |
 	            win32.WS_THICKFRAME |
 	            win32.WS_MAXIMIZEBOX
 
 	case .Borderless_Fullscreen:
-		style = win32.WS_VISIBLE
+		style = 0
+	}
+
+	if visible {
+		style |= win32.WS_VISIBLE
 	}
 
 	return style
@@ -365,7 +372,13 @@ windows_set_screen_size :: proc(w, h: int) {
 	r.right = i32(w)
 	r.bottom = i32(h)
 
-	win32.AdjustWindowRectExForDpi(&r, windows_get_style(s.window_mode), false, 0, win32.GetDpiForWindow(s.hwnd))
+	win32.AdjustWindowRectExForDpi(
+		&r,
+		windows_get_style(s.window_mode, s.window_visible),
+		false,
+		0,
+		win32.GetDpiForWindow(s.hwnd),
+	)
 	win32.SetWindowPos(
 		s.hwnd,
 		{},
@@ -449,6 +462,7 @@ Windows_State :: struct {
 	custom_context: runtime.Context,
 	hwnd: win32.HWND,
 	window_mode: Window_Mode,
+	window_visible: bool,
 
 	screen_width: int,
 	screen_height: int,
@@ -499,7 +513,7 @@ Windows_Cursor :: struct {
 windows_set_window_mode :: proc(window_mode: Window_Mode) {
 	old_window_mode := s.window_mode
 	s.window_mode = window_mode
-	style := windows_get_style(window_mode)
+	style := windows_get_style(window_mode, s.window_visible)
 	win32.SetWindowLongW(s.hwnd, win32.GWL_STYLE, i32(style))
 
 	switch window_mode {
@@ -565,6 +579,53 @@ windows_set_window_icon :: proc(image: Image, _: bool) -> bool {
 
 	s.hicon = hicon
 	return true
+}
+
+windows_show_window :: proc() {
+	if s.window_visible {
+		return
+	}
+
+	s.window_visible = true
+	win32.ShowWindow(s.hwnd, win32.SW_SHOW)
+	win32.UpdateWindow(s.hwnd)
+	if win32.SetForegroundWindow(s.hwnd) {
+		win32.SetFocus(s.hwnd)
+	}
+}
+
+windows_get_clipboard_text :: proc(allocator := context.allocator) -> (string, bool) {
+	if !win32.IsClipboardFormatAvailable(win32.CF_UNICODETEXT) {
+		return "", false
+	}
+
+	if !win32.OpenClipboard(s.hwnd) {
+		return "", false
+	}
+
+	handle := win32.GetClipboardData(win32.CF_UNICODETEXT)
+	if handle == nil {
+		win32.CloseClipboard()
+		return "", false
+	}
+
+	data := win32.GlobalLock((win32.HGLOBAL)(handle))
+	if data == nil {
+		win32.CloseClipboard()
+		return "", false
+	}
+
+	length := int(win32.GlobalSize(handle) / size_of(u16))
+	result, result_err := win32.utf16_to_utf8(([^]u16)(data)[:length], allocator)
+	win32.GlobalUnlock((win32.HGLOBAL)(handle))
+	win32.CloseClipboard()
+
+	if result_err != nil {
+		log.errorf("Failed converting clipboard text to UTF-8. Error: %v", result_err)
+		return "", false
+	}
+
+	return result, true
 }
 
 windows_set_cursor_hidden :: proc(hidden: bool) {
@@ -851,6 +912,36 @@ _windows_window_proc :: proc "stdcall" (hwnd: win32.HWND, msg: win32.UINT, wpara
 				append(&s.events, Event_Typed_Rune { typed = codepoint })
 			}
 		}
+
+	case win32.WM_DROPFILES:
+		drop := (win32.HDROP)(wparam)
+		count := int(win32.DragQueryFileW(drop, 0xFFFFFFFF, nil, 0))
+
+		if count == 0 {
+			win32.DragFinish(drop)
+			break
+		}
+
+		paths := make([]string, count, s.allocator)
+		for i in 0..<count {
+			path_length := int(win32.DragQueryFileW(drop, u32(i), nil, 0))
+			if path_length == 0 {
+				continue
+			}
+
+			buffer := make([]u16, path_length+1, frame_allocator)
+			written := int(win32.DragQueryFileW(drop, u32(i), raw_data(buffer), u32(len(buffer))))
+			path, path_err := win32.utf16_to_utf8(buffer[:written], s.allocator)
+			if path_err != nil {
+				log.errorf("Failed converting dropped file path to UTF-8. Error: %v", path_err)
+				continue
+			}
+
+			paths[i] = path
+		}
+
+		win32.DragFinish(drop)
+		append(&s.events, Event_Files_Dropped { paths = paths })
 
 	case win32.WM_MOUSEMOVE:
 		x := win32.GET_X_LPARAM(lparam)

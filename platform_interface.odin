@@ -25,6 +25,8 @@ Platform_Interface :: struct #all_or_none {
 	get_screen_height: proc() -> int,
 	get_window_scale: proc() -> f32,
 	set_window_mode: proc(window_mode: Window_Mode),
+	show_window: proc(),
+	get_clipboard_text: proc(allocator: runtime.Allocator) -> (string, bool),
 
 	// `warn_if_unsupported` says whether to log when the platform or its setup cannot show icons
 	// at all, such as a Wayland compositor without the icon protocol. `init` passes false when it

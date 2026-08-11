@@ -31,6 +31,8 @@ PLATFORM_LINUX :: Platform_Interface {
 	get_window_scale = linux_get_window_scale,
 	set_window_mode = linux_set_window_mode,
 	set_window_icon = linux_set_window_icon,
+	show_window = linux_show_window,
+	get_clipboard_text = linux_get_clipboard_text,
 	set_cursor_hidden = linux_set_cursor_hidden,
 	is_cursor_hidden = linux_is_cursor_hidden,
 	set_mouse_locked = linux_set_mouse_locked,
@@ -46,6 +48,12 @@ PLATFORM_LINUX :: Platform_Interface {
 }
 
 s: ^Linux_State
+
+linux_show_window :: proc() {}
+
+linux_get_clipboard_text :: proc(allocator := context.allocator) -> (string, bool) {
+	return "", false
+}
 
 linux_state_size :: proc() -> int {
 	return size_of(Linux_State)

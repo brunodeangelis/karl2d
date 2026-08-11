@@ -18,6 +18,7 @@ RENDER_BACKEND_D3D11 :: Render_Backend_Interface {
 	set_internal_state = d3d11_set_internal_state,
 	create_texture = d3d11_create_texture,
 	load_texture = d3d11_load_texture,
+	load_image_from_texture = d3d11_load_image_from_texture,
 	update_texture = d3d11_update_texture,
 	destroy_texture = d3d11_destroy_texture,
 	texture_needs_vertical_flip = d3d11_texture_needs_vertical_flip,
@@ -744,6 +745,59 @@ d3d11_load_texture :: proc(
 	format: Pixel_Format,
 ) -> (Texture_Handle, bool) {
 	return create_texture(width, height, format, raw_data(data))
+}
+
+d3d11_load_image_from_texture :: proc(th: Texture_Handle) -> Image {
+	tex := hm.get(&s.textures, th)
+	if tex == nil || tex.tex == nil {
+		log.errorf("Cannot load image from invalid texture %v.", th)
+		return {}
+	}
+
+	if tex.format != .RGBA_8_Norm {
+		log.errorf("Cannot load image from texture %v because it is not RGBA8.", th)
+		return {}
+	}
+
+	desc: d3d11.TEXTURE2D_DESC
+	tex.tex->GetDesc(&desc)
+	staging_desc := d3d11.TEXTURE2D_DESC {
+		Width = desc.Width,
+		Height = desc.Height,
+		MipLevels = 1,
+		ArraySize = 1,
+		Format = desc.Format,
+		SampleDesc = {Count = 1},
+		Usage = .STAGING,
+		CPUAccessFlags = {.READ},
+	}
+
+	staging: ^d3d11.ITexture2D
+	create_result := ch(s.device->CreateTexture2D(&staging_desc, nil, &staging))
+	if create_result < 0 {
+		return {}
+	}
+
+	s.device_context->CopyResource(staging, tex.tex)
+	mapped: d3d11.MAPPED_SUBRESOURCE
+	map_result := ch(s.device_context->Map(staging, 0, .READ, {}, &mapped))
+	if map_result < 0 {
+		staging->Release()
+		return {}
+	}
+
+	width := int(desc.Width)
+	height := int(desc.Height)
+	pixels := make([]Color, width*height, s.allocator)
+	source := ([^]u8)(mapped.pData)
+	for row in 0..<height {
+		destination := pixels[row*width:(row+1)*width]
+		mem.copy(raw_data(destination), &source[row*int(mapped.RowPitch)], width*size_of(Color))
+	}
+
+	s.device_context->Unmap(staging, 0)
+	staging->Release()
+	return {pixels = pixels, width = width, height = height}
 }
 
 d3d11_update_texture :: proc(th: Texture_Handle, data: []u8, rect: Rect) -> bool {

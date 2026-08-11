@@ -13,6 +13,7 @@ import "base:intrinsics"
 import "base:runtime"
 import "core:time"
 import "core:slice"
+import "core:strings"
 import hm "core:container/handle_map"
 import "log"
 
@@ -32,6 +33,8 @@ PLATFORM_MAC :: Platform_Interface {
 	get_window_scale = mac_get_window_scale,
 	set_window_mode = mac_set_window_mode,
 	set_window_icon = mac_set_window_icon,
+	show_window = mac_show_window,
+	get_clipboard_text = mac_get_clipboard_text,
 
 	set_cursor_hidden = mac_set_cursor_hidden,
 	is_cursor_hidden = mac_is_cursor_hidden,
@@ -126,6 +129,28 @@ Gamepad :: struct {
 }
 
 s: ^Mac_State
+
+mac_show_window :: proc() {}
+
+mac_get_clipboard_text :: proc(allocator := context.allocator) -> (string, bool) {
+	pasteboard := ce.Pasteboard_generalPasteboard()
+	if pasteboard == nil {
+		return "", false
+	}
+
+	text := ce.Pasteboard_stringForType(pasteboard, NS.AT("public.utf8-plain-text"))
+	if text == nil {
+		return "", false
+	}
+
+	result, result_err := strings.clone_from_cstring(text->UTF8String(), allocator)
+	if result_err != nil {
+		log.errorf("Failed converting clipboard text to UTF-8. Error: %v", result_err)
+		return "", false
+	}
+
+	return result, true
+}
 
 mac_state_size :: proc() -> int {
 	return size_of(Mac_State)

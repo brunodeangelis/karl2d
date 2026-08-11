@@ -17,6 +17,7 @@ RENDER_BACKEND_WEBGL :: Render_Backend_Interface {
 	set_internal_state = webgl_set_internal_state,
 	create_texture = webgl_create_texture,
 	load_texture = webgl_load_texture,
+	load_image_from_texture = webgl_load_image_from_texture,
 	update_texture = webgl_update_texture,
 	destroy_texture = webgl_destroy_texture,
 	texture_needs_vertical_flip = webgl_texture_needs_vertical_flip,
@@ -521,6 +522,11 @@ webgl_load_texture :: proc(
 	}
 
 	return texture_handle, true
+}
+
+webgl_load_image_from_texture :: proc(th: Texture_Handle) -> Image {
+	log.error("Loading an image from a texture is not supported on web.")
+	return {}
 }
 
 webgl_update_texture :: proc(th: Texture_Handle, data: []u8, rect: Rect) -> bool {

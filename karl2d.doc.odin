@@ -176,6 +176,10 @@ set_window_mode :: proc(window_mode: Window_Mode)
 // Returns `true` if the icon was set. The reason is logged when it wasn't.
 set_window_icon :: proc(image: Image) -> bool
 
+// Shows a window created with `Init_Options.start_hidden`. Draw and present a complete frame before
+// calling this so the window starts with initialized contents.
+show_window :: proc()
+
 // Flushes the current batch. A batch consists of a number of draw calls and a vertex buffer. This
 // procedure sends all that off to the rendering backend for drawing. Normally, you do not need to
 // call this procedure manually. It is done automatically when `present` or `clear` run. It can also
@@ -239,6 +243,18 @@ get_touches :: proc() -> []Touch
 // The touch is built from the mouse state, so it never shows up in `get_events`, only in
 // `get_touches`.
 set_touch_events_from_mouse :: proc(enabled: bool)
+
+// Gets text from the system clipboard. The result is allocated using `allocator`.
+get_clipboard_text :: proc(allocator := context.allocator) -> (string, bool)
+
+// Returns true if files were dropped onto the window during this frame.
+is_file_dropped :: proc() -> bool
+
+// Gets the files dropped onto the window during this frame. Call `destroy_dropped_files` when done.
+get_dropped_files :: proc() -> []string
+
+// Destroys a dropped-files list returned by `get_dropped_files`.
+destroy_dropped_files :: proc(paths: []string)
 
 // Returns which modifiers are held. The possible values are `Control`, `Alt`, `Shift` and `Super`.
 // You can check that an exact set of modifiers are held like so:
@@ -538,6 +554,10 @@ load_image_from_file :: proc(filename: string) -> (Image, bool) #optional_ok
 // this error, it will also be logged. In case of failure, the returned `Image` will be empty: it
 // has no pixels and a width and height of zero.
 load_image_from_bytes :: proc(bytes: []u8) -> (Image, bool) #optional_ok
+
+// Copies an RGBA8 texture from the GPU into an image in RAM. Not supported by every render backend.
+// Use `destroy_image` when you are done with it.
+load_image_from_texture :: proc(texture: Texture) -> Image
 
 // Destroy an image previously loaded using `load_image_from_file` or `load_image_from_bytes`.
 destroy_image :: proc(img: Image)
@@ -1354,6 +1374,10 @@ Window_Mode :: enum {
 Init_Options :: struct {
 	window_mode: Window_Mode,
 
+	// Start with the native window hidden. Currently only supported on Windows. Use `show_window`
+	// after presenting the first complete frame.
+	start_hidden: bool,
+
 	// Enable to request anti-alias. On most systems this means 4x Multi Sample Anti Alias
 	anti_alias: bool,
 
@@ -1805,6 +1829,7 @@ State :: struct {
 	events: [dynamic]Event,
 
 	typed_runes: [dynamic]rune,
+	files_dropped_paths: []string,
 
 	mouse_position: Vec2,
 	mouse_delta: Vec2,
@@ -2129,6 +2154,7 @@ Event :: union {
 	Event_Key_Went_Up,
 	Event_Key_Repeat,
 	Event_Typed_Rune,
+	Event_Files_Dropped,
 	Event_Mouse_Move,
 	Event_Mouse_Wheel,
 	Event_Mouse_Wheel_Horizontal,
@@ -2165,6 +2191,11 @@ Event_Key_Repeat :: struct {
 // text input. See `get_typed_runes`.
 Event_Typed_Rune :: struct {
 	typed: rune,
+}
+
+// Files were dropped onto the window. Destroy `paths` with `destroy_dropped_files` when done.
+Event_Files_Dropped :: struct {
+	paths: []string,
 }
 
 Event_Mouse_Button_Went_Down :: struct {

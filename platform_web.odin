@@ -21,6 +21,8 @@ PLATFORM_WEB :: Platform_Interface {
 	get_window_scale = web_get_window_scale,
 	set_window_mode = web_set_window_mode,
 	set_window_icon = web_set_window_icon,
+	show_window = web_show_window,
+	get_clipboard_text = web_get_clipboard_text,
 
 	set_cursor_hidden = web_set_cursor_hidden,
 	is_cursor_hidden = web_is_cursor_hidden,
@@ -49,6 +51,12 @@ import "core:fmt"
 
 // The link element in index.html that `web_set_window_icon` writes the favicon into.
 FAVICON_ELEMENT_ID :: "karl2d-favicon"
+
+web_show_window :: proc() {}
+
+web_get_clipboard_text :: proc(allocator := context.allocator) -> (string, bool) {
+	return "", false
+}
 
 web_state_size :: proc() -> int {
 	return size_of(Web_State)

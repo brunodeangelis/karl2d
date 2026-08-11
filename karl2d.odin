@@ -357,6 +357,7 @@ process_events :: proc() {
 	s.mouse_delta = {}
 	s.mouse_wheel_delta = 0
 	s.mouse_wheel_delta_horizontal = 0
+	s.files_dropped_paths = {}
 
 	// Drop touches that ended last frame, clear the per-frame flags on the rest.
 	#reverse for &t, i in s.touches {
@@ -399,6 +400,9 @@ process_events :: proc() {
 
 		case Event_Typed_Rune:
 			append(&s.typed_runes, e.typed)
+
+		case Event_Files_Dropped:
+			s.files_dropped_paths = e.paths
 
 		case Event_Mouse_Move:
 			prev_pos := s.mouse_position
@@ -666,6 +670,13 @@ set_window_icon :: proc(image: Image) -> bool {
 	return pf.set_window_icon(image, true)
 }
 
+// Shows a window created with `Init_Options.start_hidden`. Draw and present a complete frame before
+// calling this so the window starts with initialized contents.
+show_window :: proc() {
+	assert_initialized()
+	pf.show_window()
+}
+
 // Flushes the current batch. A batch consists of a number of draw calls and a vertex buffer. This
 // procedure sends all that off to the rendering backend for drawing. Normally, you do not need to
 // call this procedure manually. It is done automatically when `present` or `clear` run. It can also
@@ -773,6 +784,30 @@ set_touch_events_from_mouse :: proc(enabled: bool) {
 	}
 
 	s.touch_events_from_mouse = enabled
+}
+
+// Gets text from the system clipboard. The result is allocated using `allocator`.
+get_clipboard_text :: proc(allocator := context.allocator) -> (string, bool) #optional_ok {
+	return pf.get_clipboard_text(allocator)
+}
+
+// Returns true if files were dropped onto the window during this frame.
+is_file_dropped :: proc() -> bool {
+	return len(s.files_dropped_paths) > 0
+}
+
+// Gets the files dropped onto the window during this frame. Call `destroy_dropped_files` when done.
+get_dropped_files :: proc() -> []string {
+	return s.files_dropped_paths
+}
+
+// Destroys a dropped-files list returned by `get_dropped_files`.
+destroy_dropped_files :: proc(paths: []string) {
+	for path in paths {
+		delete(path, s.allocator)
+	}
+	delete(paths, s.allocator)
+	s.files_dropped_paths = {}
 }
 
 // Returns which modifiers are held. The possible values are `Control`, `Alt`, `Shift` and `Super`.
@@ -1975,6 +2010,18 @@ load_image_from_bytes :: proc(bytes: []u8) -> (Image, bool) #optional_ok {
 @(deprecated="Use load_image_from_file instead")
 load_image :: proc(filename: string) -> (Image, bool) #optional_ok {
 	return load_image_from_file(filename)
+}
+
+// Copies an RGBA8 texture from the GPU into an image in RAM. Not supported by every render backend.
+// Use `destroy_image` when you are done with it.
+load_image_from_texture :: proc(texture: Texture) -> Image {
+	if texture.handle == TEXTURE_NONE || texture.width <= 0 || texture.height <= 0 {
+		log.error("Cannot load image from invalid texture.")
+		return {}
+	}
+
+	draw_current_batch()
+	return rb.load_image_from_texture(texture.handle)
 }
 
 // Destroy an image previously loaded using `load_image_from_file` or `load_image_from_bytes`.
@@ -5372,6 +5419,10 @@ Window_Mode :: enum {
 Init_Options :: struct {
 	window_mode: Window_Mode,
 
+	// Start with the native window hidden. Currently only supported on Windows. Use `show_window`
+	// after presenting the first complete frame.
+	start_hidden: bool,
+
 	// Enable to request anti-alias. On most systems this means 4x Multi Sample Anti Alias
 	anti_alias: bool,
 
@@ -5823,6 +5874,7 @@ State :: struct {
 	events: [dynamic]Event,
 
 	typed_runes: [dynamic]rune,
+	files_dropped_paths: []string,
 
 	mouse_position: Vec2,
 	mouse_delta: Vec2,
@@ -6148,6 +6200,7 @@ Event :: union {
 	Event_Key_Went_Up,
 	Event_Key_Repeat,
 	Event_Typed_Rune,
+	Event_Files_Dropped,
 	Event_Mouse_Move,
 	Event_Mouse_Wheel,
 	Event_Mouse_Wheel_Horizontal,
@@ -6184,6 +6237,11 @@ Event_Key_Repeat :: struct {
 // text input. See `get_typed_runes`.
 Event_Typed_Rune :: struct {
 	typed: rune,
+}
+
+// Files were dropped onto the window. Destroy `paths` with `destroy_dropped_files` when done.
+Event_Files_Dropped :: struct {
+	paths: []string,
 }
 
 Event_Mouse_Button_Went_Down :: struct {
@@ -6921,8 +6979,13 @@ _draw_call_changes :: proc(
 	return
 }
 
-// Callers must run `_begin_vertices` first. That leaves room in the buffer and a draw call to put
-// the vertex in.
+// Starts a raw vertex batch using the current shader. Intended for renderer integrations.
+begin_batch_vertices :: proc(texture: Texture_Handle, vertices_needed: int) {
+	_begin_vertices(texture, vertices_needed)
+}
+
+// Callers must run `begin_batch_vertices` first. That leaves room in the buffer and a draw call to
+// put the vertex in.
 batch_vertex :: proc(v: Vec2, uv: Vec2, color: Color) {
 	v := v
 	shd := s.current_shader

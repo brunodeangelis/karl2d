@@ -17,6 +17,7 @@ RENDER_BACKEND_GL :: Render_Backend_Interface {
 	set_internal_state = gl_set_internal_state,
 	create_texture = gl_create_texture,
 	load_texture = gl_load_texture,
+	load_image_from_texture = gl_load_image_from_texture,
 	update_texture = gl_update_texture,
 	destroy_texture = gl_destroy_texture,
 	texture_needs_vertical_flip = gl_texture_needs_vertical_flip,
@@ -540,6 +541,32 @@ gl_load_texture :: proc(
 	}
 
 	return tex, true
+}
+
+gl_load_image_from_texture :: proc(th: Texture_Handle) -> Image {
+	tex := hm.get(&s.textures, th)
+	if tex == nil {
+		log.errorf("Cannot load image from invalid texture %v.", th)
+		return {}
+	}
+
+	if tex.format != .RGBA_8_Norm {
+		log.errorf("Cannot load image from texture %v because it is not RGBA8.", th)
+		return {}
+	}
+
+	gl.BindTexture(gl.TEXTURE_2D, tex.id)
+	width, height: i32
+	gl.GetTexLevelParameteriv(gl.TEXTURE_2D, 0, gl.TEXTURE_WIDTH, &width)
+	gl.GetTexLevelParameteriv(gl.TEXTURE_2D, 0, gl.TEXTURE_HEIGHT, &height)
+	if width <= 0 || height <= 0 {
+		return {}
+	}
+
+	pixels := make([]Color, int(width)*int(height), s.allocator)
+	gl.PixelStorei(gl.PACK_ALIGNMENT, 1)
+	gl.GetTexImage(gl.TEXTURE_2D, 0, gl.RGBA, gl.UNSIGNED_BYTE, raw_data(pixels))
+	return {pixels = pixels, width = int(width), height = int(height)}
 }
 
 gl_update_texture :: proc(th: Texture_Handle, data: []u8, rect: Rect) -> bool {

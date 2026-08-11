@@ -28,6 +28,14 @@ Window_setContentSize :: proc "c" (self: ^NS.Window, size: NS.Size) {
 	msgSend(nil, self, "setContentSize:", size)
 }
 
+Pasteboard_generalPasteboard :: proc "c" () -> ^NS.Pasteboard {
+	return msgSend(^NS.Pasteboard, NS.Pasteboard, "generalPasteboard")
+}
+
+Pasteboard_stringForType :: proc "c" (self: ^NS.Pasteboard, ty: ^NS.String) -> ^NS.String {
+	return msgSend(^NS.String, self, "stringForType:", ty)
+}
+
 Event_pressedMouseButtons :: proc "c" () -> NS.UInteger {
 	return msgSend(NS.UInteger, NS.Event, "pressedMouseButtons")
 }
